@@ -89,115 +89,123 @@
 
 {# This macro assumes the calling model includes a source_cte that already includes the 'with' keyword. -#}
 {# To simplify the calling model, a comma after its CTE definition is not expected, so add one here.-#}
-,
 
 {# Aggregate at every possible combination of date grains & slice -#}
-cte_grouping_sets as (
-  select
-    {# Loop through each date grain and create a date_trunc version of it (e.g. day, month, year) -#}
-    {%- for date_slice in date_slices -%}
-      date_trunc('{{date_slice}}', {{ anchor_date }})::date as metric_{{date_slice}},
-      grouping(metric_{{date_slice}}) as {{date_slice}}_bit,
-    {% endfor -%}
-
-    {% if include_overall_total == true -%}
-      '{{total_value}}' as {{total_name}}_object,
-    {% endif -%}
-
-    {# Loop through each slice & create helper columns for later use -#}
-    {# Store combination dictionary values, concatenated dimension names, and concatenated dimension values -#}
-    {%- for combination in metric_slices -%}
-      {%- for dimension in combination -%}
-        concat('{"dim_name": "{{dimension}}", "dim_value": "', {{dimension}} , '"}') {%- if not loop.last %}, {% endif -%}
-      {% endfor %} as combination_{{loop.index}},
-    {% endfor -%}
-
-    {# grouping() returns 0 for a row that is grouped on the column specified, and 1 when left out of aggregation -#}
-    {% for _ in metric_slices -%}
-      grouping(combination_{{loop.index}}) as combination_{{loop.index}}_bit,
-    {% endfor -%}
-
-    {%- if include_overall_total == true -%}
-      grouping({{total_name}}_object) as {{total_name}}_bit,
-    {% endif -%}
-
-    {{"null" if metric_denominator is none else metric_denominator}} as metric_denominators,
-    '{{metric_calculation}}' as metric_calculation,
-    {{metric_calculation}} as metric_value
-  from
-    {{ source_cte }}
-  {# Allow future dates for forward-looking metrics, with an upper bound of 1 year into the future -#}
-  where {{ anchor_date }} between '2014-01-01' and current_date() + interval 365 day
-  group by grouping sets (
-    {# Add grouping sets for every combination of date_grain_pivots and slice -#}
-    {%- for date_slice in date_slices -%}
-      {%- for _ in metric_slices -%}
-        (metric_{{date_slice}}, combination_{{loop.index}}) {%- if include_overall_total == true or (include_overall_total != true and not loop.last) -%}, {%- endif %}
-      {% endfor -%}
-      {%- if include_overall_total == true -%}
-        (metric_{{date_slice}}, {{total_name}}_object)
-      {%- endif -%}{%- if not loop.last -%}, {%- endif %}
-    {% endfor -%}
-  )
-),
-
-cte_final as (
+with cte_grouping_names as (
     select
-        '{{ model.name }}' as metric_model,
-        {{ is_snapshot_reliant_metric }} as is_snapshot_reliant_metric,
-        '{{ anchor_date }}' as anchor_date,
-        {# Utilize grouping() bits created above to determine the level of aggregation -#}
-        case
-          {% for date_slice in date_slices -%}
-            when {{date_slice}}_bit = 0 then '{{date_slice}}'
-          {% endfor -%}
-        end as date_grain,
-        case
-          {% for date_slice in date_slices -%}
-            when {{date_slice}}_bit = 0 then metric_{{date_slice}}
-          {% endfor -%}
-        end as metric_date,
-        case
-          {% for _ in metric_slices -%}
-            when combination_{{loop.index}}_bit = 0 then combination_{{loop.index}}
-          {% endfor -%}
-          {% if include_overall_total == true -%}
-            when total_bit = 0 then {{total_name}}_object
-          {% endif -%}
-        end as slice_object,
-        {# Create a string of dimension names, utilizing the key-value pairs -#}
-        case
-          {% for _ in metric_slices -%}
-            when combination_{{loop.index}}_bit = 0 then concat(
-              {%- for dimension in metric_slices[loop.index0] -%}
-                ifnull(json_extract_string(slice_object, '$.dim_name'), 'null') {%- if not loop.last -%}, ' x ', {% endif %}
-              {%- endfor -%}
-            )
-          {% endfor -%}
-          {% if include_overall_total == true -%}
-            when total_bit = 0 then '{{total_name}}'
-          {% endif -%}
-        end as slice_dimension,
-        {# Create a string of dimension values, utilizing the key-value pairs -#}
-        case
-          {% for _ in metric_slices -%}
-            when combination_{{loop.index}}_bit = 0 then concat(
-              {%- for dimension in metric_slices[loop.index0] -%}
-                ifnull(json_extract_string(slice_object, '$.dim_value'), 'null') {%- if not loop.last -%}, ' x ', {% endif %}
-              {%- endfor -%}
-            )
-          {% endfor -%}
-          {% if include_overall_total == true -%}
-            when total_bit = 0 then '{{total_value}}'
-          {% endif -%}
-        end as slice_value,
-        metric_calculation,
-        case
-          when metric_denominators != 0 and metric_value is null then 0
-          else metric_value
-        end as metric_value
+        {# Loop through each date grain and create a date_trunc version of it (e.g. day, month, year) -#}
+        {%- for date_slice in date_slices -%}
+            date_trunc('{{date_slice}}', {{ anchor_date }})::date as metric_{{date_slice}},
+        {% endfor -%}
+
+        {% if include_overall_total == true -%}
+            '{{total_value}}' as {{total_name}}_object,
+        {% endif -%}
+
+        {# Loop through each slice & create helper columns for later use -#}
+        {# Store combination dictionary values, concatenated dimension names, and concatenated dimension values -#}
+        {%- for combination in metric_slices -%}
+            {%- for dimension in combination -%}
+            concat('{"dim_name": "{{dimension}}", "dim_value": "', {{dimension}} , '"}') {%- if not loop.last %}, {% endif -%}
+            {% endfor %} as combination_{{loop.index}},
+        {% endfor -%}
+        sc.*
     from
-      cte_grouping_sets
+        {{ source_cte }} sc
+    {# Allow future dates for forward-looking metrics, with an upper bound of 1 year into the future -#}
+    where
+        {{ anchor_date }} between '2014-01-01' and current_date() + interval 365 day
 )
-select * from cte_final
+, cte_grouping_sets as (
+    select
+        {# Loop through each date grain and create a date_trunc version of it (e.g. day, month, year) -#}
+        {%- for date_slice in date_slices -%}
+        metric_{{date_slice}},
+        grouping(metric_{{date_slice}}) as {{date_slice}}_bit,
+        {% endfor -%}
+
+        {# grouping() returns 0 for a row that is grouped on the column specified, and 1 when left out of aggregation -#}
+        {% for _ in metric_slices -%}
+        combination_{{loop.index}},
+        grouping(combination_{{loop.index}}) as combination_{{loop.index}}_bit,
+        {% endfor -%}
+
+        {%- if include_overall_total == true -%}
+        {{total_name}}_object,
+        grouping({{total_name}}_object) as {{total_name}}_bit,
+        {% endif -%}
+
+        {{"null" if metric_denominator is none else metric_denominator}} as metric_denominators,
+        '{{metric_calculation}}' as metric_calculation,
+        {{metric_calculation}} as metric_value
+    from
+        cte_grouping_names gn
+    group by grouping sets (
+        {# Add grouping sets for every combination of date_grain_pivots and slice -#}
+        {%- for date_slice in date_slices -%}
+        {%- for _ in metric_slices -%}
+            (metric_{{date_slice}}, combination_{{loop.index}}) {%- if include_overall_total == true or (include_overall_total != true and not loop.last) -%}, {%- endif %}
+        {% endfor -%}
+        {%- if include_overall_total == true -%}
+            (metric_{{date_slice}}, {{total_name}}_object)
+        {%- endif -%}{%- if not loop.last -%}, {%- endif %}
+        {% endfor -%}
+    )
+)
+select
+    '{{ model.name }}' as metric_model,
+    {{ is_snapshot_reliant_metric }} as is_snapshot_reliant_metric,
+    '{{ anchor_date }}' as anchor_date,
+    {# Utilize grouping() bits created above to determine the level of aggregation -#}
+    case
+        {% for date_slice in date_slices -%}
+        when {{date_slice}}_bit = 0 then '{{date_slice}}'
+        {% endfor -%}
+    end as date_grain,
+    case
+        {% for date_slice in date_slices -%}
+        when {{date_slice}}_bit = 0 then metric_{{date_slice}}
+        {% endfor -%}
+    end as metric_date,
+    case
+        {% for _ in metric_slices -%}
+        when combination_{{loop.index}}_bit = 0 then combination_{{loop.index}}
+        {% endfor -%}
+        {% if include_overall_total == true -%}
+        when total_bit = 0 then {{total_name}}_object
+        {% endif -%}
+    end as slice_object,
+    {# Create a string of dimension names, utilizing the key-value pairs -#}
+    case
+        {% for _ in metric_slices -%}
+        when combination_{{loop.index}}_bit = 0 then concat(
+            {%- for dimension in metric_slices[loop.index0] -%}
+            ifnull(slice_object:dim_name, 'null') {%- if not loop.last -%}, ' x ', {% endif %}
+            {%- endfor -%}
+        )
+        {% endfor -%}
+        {% if include_overall_total == true -%}
+        when total_bit = 0 then '{{total_name}}'
+        {% endif -%}
+    end as slice_dimension,
+    {# Create a string of dimension values, utilizing the key-value pairs -#}
+    case
+        {% for _ in metric_slices -%}
+        when combination_{{loop.index}}_bit = 0 then concat(
+            {%- for dimension in metric_slices[loop.index0] -%}
+            ifnull(slice_object:dim_value, 'null') {%- if not loop.last -%}, ' x ', {% endif %}
+            {%- endfor -%}
+        )
+        {% endfor -%}
+        {% if include_overall_total == true -%}
+        when total_bit = 0 then '{{total_value}}'
+        {% endif -%}
+    end as slice_value,
+    metric_calculation,
+    case
+        when metric_denominators != 0 and metric_value is null then 0
+        else metric_value
+    end as metric_value
+from
+    cte_grouping_sets
 {% endmacro %}

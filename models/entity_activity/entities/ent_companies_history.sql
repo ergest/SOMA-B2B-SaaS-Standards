@@ -12,6 +12,6 @@ select
     name,
     try_cast(annualrevenue as double) as size,
     {{ dbt.safe_cast('createdate', dbt.type_timestamp()) }} as created_on,
-    {{ date_trunc('hour',  dbt.current_timestamp()) }} as observed_on
+    {{ date_trunc('day',  dbt.current_timestamp()) }} as observed_on
 from
     {{ source('raw_hubspot','companies') }}

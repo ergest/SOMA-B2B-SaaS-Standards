@@ -1,0 +1,18 @@
+version: 2
+
+sources:
+  - name: crm
+    schema: raw_hubspot
+    database: internal_dwh
+    tables:
+      - name: deals
+      - name: deals_history
+      - name: owners
+      - name: owners_teams
+      - name: associations
+      - name: quotes
+      - name: line_items
+      - name: calls
+      - name: companies
+      - name: emails
+      - name: quotes_history

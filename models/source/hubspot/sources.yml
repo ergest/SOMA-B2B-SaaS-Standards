@@ -1,0 +1,23 @@
+version: 2
+
+sources:
+    - name: raw_hubspot
+      tables:
+        - name: associations
+        - name: calls
+        - name: companies
+        - name: deals
+        - name: deals_history
+        - name: emails
+        - name: line_items
+        - name: line_items_history
+        - name: meetings
+        - name: notes
+        - name: owners
+        - name: owners_teams
+        - name: products
+        - name: quotes
+        - name: quotes_history
+        - name: tasks
+        - name: pipeline
+        - name: pipeline_to_stage

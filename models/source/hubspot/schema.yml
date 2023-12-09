@@ -1,0 +1,77 @@
+version: 2
+
+models:
+  - name: associations
+    columns:
+      - name: hash_id
+        tests:
+          - not_null
+  - name: calls
+    columns:
+      - name: id
+        tests:
+          - unique
+          - not_null
+      - name: hs_createdate
+        tests:
+          - dbt_expectations.expect_column_values_to_be_of_type:
+              column_type: date
+  - name: companies
+    description: "The hubspot companies records"
+    columns:
+      - name: id
+        description: "The primary key for this table"
+        tests:
+          - unique
+          - not_null
+
+  - name: deals
+    description: "The hubspot deals"
+    columns:
+      - name: id
+        description: "The primary key for this table"
+        tests:
+          - unique
+          - not_null
+  - name: emails
+    columns:
+      - name: id
+        description: "The primary key for this table"
+        tests:
+          - unique
+          - not_null
+  - name: line_items
+    columns:
+      - name: id
+        description: "The primary key for this table"
+        tests:
+          - unique
+          - not_null
+  - name: meetings
+    columns:
+      - name: id
+        description: "The primary key for this table"
+        tests:
+          - unique
+          - not_null
+  - name: notes
+    columns:
+      - name: id
+        description: "The primary key for this table"
+        tests:
+          - unique
+          - not_null
+  - name: owners
+    columns:
+      - name: id
+        description: "The primary key for this table"
+        tests:
+          - unique
+          - not_null
+  - name: quotes
+    columns:
+      - name: id
+        description: "The primary key for this table"
+        tests:
+          - unique
+          - not_null
